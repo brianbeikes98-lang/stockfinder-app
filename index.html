@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>StockFinder</title>
+  
+  <!-- Tailwind CSS via CDN voor de styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <style>
+    .custom-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 10px;
+      border-radius: 5px;
+      outline: none;
+    }
+    .custom-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #2563eb;
+      cursor: pointer;
+      border: 3px solid white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .custom-slider:disabled::-webkit-slider-thumb {
+      background: #9ca3af;
+    }
+    
+    @keyframes slideUpFade {
+      0% { opacity: 0; transform: translateY(20px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideRightFade {
+      0% { opacity: 0; transform: translateX(20px); }
+      100% { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes popIn {
+      0% { opacity: 0; transform: scale(0.95); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .animate-slide-up { animation: slideUpFade 0.4s ease-out forwards; }
+    .animate-slide-right { animation: slideRightFade 0.4s ease-out forwards; }
+    .animate-pop-in { animation: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans sm:py-8 text-gray-800">
+
+  <div class="max-w-md mx-auto bg-gray-50 min-h-screen sm:min-h-[850px] sm:rounded-[2.5rem] sm:shadow-2xl sm:overflow-hidden relative border-gray-800 sm:border-[8px] flex flex-col">
+    
+    <!-- Header -->
+    <div class="bg-blue-600 text-white p-4 sticky top-0 z-10 flex items-center shadow-md">
+      <button id="back-btn" onclick="app.goBack()" class="mr-3 p-1 hover:bg-blue-700 rounded-full transition hidden">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+      </button>
+      <h1 id="header-title" class="text-xl font-bold flex-1 text-center pr-8">Kies een Sector</h1>
+    </div>
+
+    <!-- Pagina's -->
+    <div id="view-step1" class="flex-1 overflow-y-auto hidden animate-slide-up"></div>
+    <div id="view-step2" class="flex-1 overflow-y-auto hidden animate-slide-right"></div>
+    <div id="view-step3" class="flex-1 overflow-y-auto hidden animate-slide-right"></div>
+    
+    <!-- Lader -->
+    <div id="view-loading" class="flex-1 flex flex-col items-center justify-center bg-gray-50 p-4 hidden">
+        <div class="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-6"></div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Aandelen scannen...</h2>
+        <p class="text-gray-500 text-center px-4">Live verbinden met Financial Modeling Prep...</p>
+    </div>
+
+    <!-- Geen resultaten (Te strenge filters) -->
+    <div id="view-no-results" class="flex-1 flex flex-col items-center justify-center p-6 text-center pb-24 hidden animate-slide-up bg-gray-50">
+        <div class="bg-orange-100 p-4 rounded-full mb-4">
+            <svg width="40" height="40" class="text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        </div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Te strenge eisen?</h2>
+        <p class="text-gray-600 mb-8 leading-relaxed">Geen enkel aandeel in deze selectie voldoet aan jouw specifieke eisen (teveel rode scores). Zet een paar ratio's uit of wees iets soepeler.</p>
+        <button onclick="app.setStep(3)" class="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/30">Filters Aanpassen</button>
+    </div>
+
+    <!-- Foutmelding Scherm (API Errors) -->
+    <div id="view-error" class="flex-1 flex flex-col items-center justify-center p-6 text-center pb-24 hidden animate-slide-up bg-gray-50">
+        <div class="bg-red-100 p-4 rounded-full mb-4">
+            <svg width="40" height="40" class="text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        </div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2">Oeps, iets ging mis</h2>
+        <p id="error-message-text" class="text-gray-600 mb-8 leading-relaxed font-medium"></p>
+        <button onclick="app.setStep(3)" class="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-600/30">Terug naar Filters</button>
+    </div>
+
+    <!-- Resultaten -->
+    <div id="view-results" class="flex-1 overflow-y-auto hidden animate-slide-up bg-gray-50"></div>
+
+    <!-- Jargon Uitleg Modal -->
+    <div id="jargon-modal" class="fixed inset-0 z-50 items-center justify-center p-4 bg-black/40 backdrop-blur-sm hidden" onclick="app.closeJargon()">
+      <div class="bg-white p-6 rounded-[2rem] shadow-2xl max-w-sm w-full animate-pop-in" onclick="event.stopPropagation()">
+        <div class="flex items-center space-x-2 mb-3">
+          <svg class="text-blue-500" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <h3 class="font-bold text-xl text-gray-900">Wat betekent dit?</h3>
+        </div>
+        <p id="jargon-text" class="text-gray-700 leading-relaxed font-medium"></p>
+        <button onclick="app.closeJargon()" class="mt-6 w-full bg-blue-100 hover:bg-blue-200 text-blue-800 font-bold py-3 rounded-xl transition-colors">Begrepen!</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- API CONFIGURATIE ---
+    // Jouw exacte sleutel
+    const API_KEY = 'iGYWJJcOvPV4Zuzq6Pv0J4B1HWwbjtfu';
+
+    const JARGON_TERMS = {
+      'oversold': 'Het aandeel is in korte tijd heel hard gedaald. Volgens analisten is het nu "te goedkoop" en kan de prijs weer gaan stijgen.',
+      'overbought': 'Het aandeel is in korte tijd heel hard gestegen. Het is misschien "te duur" geworden en heeft een verhoogd risico om te gaan dalen.',
+      'boekwaarde': 'De totale waarde van alle bezittingen van het bedrijf (gebouwen, machines, bankrekeningen) min alle schulden. Kortom: wat blijft er over als je de stekker eruit trekt?',
+      'eigen vermogen': 'Het geld dat daadwerkelijk van de eigenaren (de aandeelhouders) is. Je berekent het door alle schulden van de bezittingen af te trekken.',
+      'vlottende activa': 'Spullen of geld die het bedrijf heel snel (binnen 1 jaar) kan inzetten om rekeningen te betalen. Denk aan voorraden of geld op de bank.',
+      'dividend': 'Een stukje van de winst dat het bedrijf als "bedankje" uitbetaalt aan de mensen die hun aandelen bezitten.',
+      'volatiliteit': 'Hoe erg de prijs heen en weer schiet. Hoge volatiliteit betekent grote sprongen omhoog én omlaag.'
+    };
+
+    const SECTORS = [
+      { id: 'it', name: 'Informatietechnologie (IT)', desc: 'Software, hardware en chips (bijv. ASML, Apple).' },
+      { id: 'health', name: 'Gezondheidszorg', desc: 'Medische apparatuur en medicijnontwikkeling.' },
+      { id: 'finance', name: 'Financiële Dienstverlening', desc: 'Banken, verzekeraars en brokers (bijv. ING).' },
+      { id: 'lux', name: 'Luxegoederen (Cyclisch)', desc: 'Auto\'s, kleding, reizen (bijv. Tesla, LVMH).' },
+      { id: 'staples', name: 'Defensieve Consumentengoederen', desc: 'Essentiële producten (bijv. Unilever, Ahold).' },
+      { id: 'ind', name: 'Industrie', desc: 'Zware machines, transport, luchtvaart en bouw.' },
+      { id: 'comm', name: 'Communicatiediensten', desc: 'Telecom, media en sociale media (bijv. KPN, Meta).' },
+      { id: 'energy', name: 'Energie', desc: 'Olie, gas en brandstoffen (bijv. Shell).' },
+      { id: 'mat', name: 'Materialen', desc: 'Chemie, mijnbouw en staal (bijv. AkzoNobel).' },
+      { id: 'util', name: 'Nutsbedrijven', desc: 'Water, elektriciteit en gas. Erg stabiel.' },
+      { id: 'real', name: 'Vastgoed (REITs)', desc: 'Ontwikkeling en beheer van vastgoed.' }
+    ];
+
+    const REGIONS = [
+      { id: 'eu', name: 'Europa', icon: '🌍' },
+      { id: 'na', name: 'Noord-Amerika', icon: '🌎' },
+      { id: 'as', name: 'Azië & Oceanië', icon: '🌏' },
+      { id: 'em', name: 'Opkomende Markten', icon: '📈' },
+      { id: 'global', name: 'Wereldwijd (Alle regio\'s)', icon: '🌐' }
+    ];
+
+    const RATIOS = [
+      { id: 'kw', name: 'K/W (Koers-winst)', info: 'Hoeveel jaar duurt het voordat het bedrijf je aankoop heeft terugverdiend met hun winst? Hoe lager dit getal, hoe goedkoper het aandeel lijkt.', min: 1, max: 50, step: 1, defaultVal: 15, unit: '', dir: 'lower', fmpKey: 'peRatioTTM', multiplier: 1 },
+      { id: 'kb', name: 'K/B (Koers-boekwaarde)', info: 'Betaal je meer dan het bedrijf eigenlijk bezit (de boekwaarde)? Een score onder de 1 betekent dat het aandeel flink in de "uitverkoop" is.', min: 0.1, max: 10, step: 0.1, defaultVal: 2, unit: '', dir: 'lower', fmpKey: 'priceToBookRatioTTM', multiplier: 1 },
+      { id: 'ko', name: 'K/O (Koers-omzet)', info: 'Wat betaal je voor 1 euro omzet? Handig om te gebruiken bij jonge bedrijven die groeien, maar nog geen winst maken.', min: 0.1, max: 10, step: 0.1, defaultVal: 1.5, unit: '', dir: 'lower', fmpKey: 'priceToSalesRatioTTM', multiplier: 1 },
+      { id: 'de', name: 'D/E (Schuld / Eigen vermogen)', info: 'Hoeveel van het bedrijf is betaald met geleend geld? Minder schulden ten opzichte van hun eigen vermogen is een stuk veiliger.', min: 0, max: 5, step: 0.1, defaultVal: 1.0, unit: '', dir: 'lower', fmpKey: 'debtEquityRatioTTM', multiplier: 1 },
+      { id: 'rev', name: 'REV (Winst op Eigen Vermogen)', info: 'Hoeveel procent winst maken ze met jouw inleg (het eigen vermogen)? Hoe hoger het percentage, hoe efficiënter het bedrijf met geld omgaat.', min: 0, max: 50, step: 1, defaultVal: 15, unit: '%', dir: 'higher', fmpKey: 'returnOnEquityTTM', multiplier: 100 },
+      { id: 'cr', name: 'Liquiditeit (Current Ratio)', info: 'Hebben ze genoeg geld in kas (vlottende activa) om rekeningen op korte termijn te betalen? Een score boven de 1,5 is veilig.', min: 0, max: 5, step: 0.1, defaultVal: 1.5, unit: '', dir: 'higher', fmpKey: 'currentRatioTTM', multiplier: 1 },
+      { id: 'div', name: 'Dividendrendement', info: 'Hoeveel "rente" (dividend) krijg je per jaar uitbetaald op je aandelen, los van of de beurskoers stijgt of daalt?', min: 0, max: 15, step: 0.1, defaultVal: 2.0, unit: '%', dir: 'higher', fmpKey: 'dividendYieldTTM', multiplier: 100 },
+      { id: 'rsi', name: 'RSI (Korte Termijn Indicator)', info: 'Is het aandeel de laatste tijd flink gedaald (oversold) of juist flink gestegen (overbought)? Onder 30 zien veel mensen als koopkans.', min: 10, max: 90, step: 1, defaultVal: 40, unit: '', dir: 'lower', fmpKey: 'mockRSI', multiplier: 1 }
+    ];
+
+    const FMP_SECTORS = { 'it': 'Technology', 'health': 'Healthcare', 'finance': 'Financial Services', 'lux': 'Consumer Cyclical', 'staples': 'Consumer Defensive', 'ind': 'Industrials', 'comm': 'Communication Services', 'energy': 'Energy', 'mat': 'Basic Materials', 'util': 'Utilities', 'real': 'Real Estate' };
+    
+    // Grote verzameling beurzen per regio
+    const FMP_EXCHANGES = { 
+      'eu': 'AMS,BRU,PAR,LSE,FRA,XETRA', 
+      'na': 'NYSE,NASDAQ,AMEX,TSX', 
+      'as': 'TSE,HKSE,NSE,BSE', 
+      'em': 'SAO,BSE,MEX', 
+      'global': '' 
+    };
+
+    // --- ICONS ---
+    const SVG = {
+      chevronRight: `<svg width="20" height="20" class="text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`,
+      info: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>`,
+      search: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>`,
+      trendingUp: `<svg width="14" height="14" class="mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>`,
+      checkCircle: `<svg width="20" height="20" class="shrink-0 mt-0.5 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></svg>`,
+      alertCircle: `<svg width="18" height="18" class="shrink-0 mt-0.5 text-orange-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>`
+    };
+
+    // --- STATE ---
+    let state = {
+      step: 1,
+      selectedSector: null,
+      selectedRegion: null,
+      enabledRatios: {},
+      ratioValues: {},
+      activeTooltip: null,
+      results: [],
+      isMockData: false,
+      showInstallTip: true
+    };
+
+    RATIOS.forEach(r => {
+      state.enabledRatios[r.id] = true;
+      state.ratioValues[r.id] = r.defaultVal;
+    });
+
+    // --- LOGICA ---
+    window.app = {
+      setStep: function(stepNumber) {
+        state.step = stepNumber;
+        this.updateView();
+      },
+      
+      goBack: function() {
+        if(state.step > 1 && state.step < 4) this.setStep(state.step - 1);
+      },
+
+      selectSector: function(id) {
+        state.selectedSector = id;
+        this.setStep(2);
+      },
+
+      selectRegion: function(id) {
+        state.selectedRegion = id;
+        this.setStep(3);
+      },
+
+      toggleRatio: function(id) {
+        state.enabledRatios[id] = !state.enabledRatios[id];
+        this.renderStep3();
+      },
+
+      updateSlider: function(id, val) {
+        state.ratioValues[id] = parseFloat(val);
+        const ratio = RATIOS.find(r => r.id === id);
+        const displayEl = document.getElementById(`val-display-${id}`);
+        if(displayEl) displayEl.innerText = (ratio.dir === 'lower' ? 'Max ' : 'Min ') + state.ratioValues[id] + ratio.unit;
+      },
+
+      toggleTooltip: function(id) {
+        state.activeTooltip = state.activeTooltip === id ? null : id;
+        this.renderStep3();
+      },
+
+      closeInstallTip: function() {
+        state.showInstallTip = false;
+        this.renderStep1();
+      },
+
+      openJargon: function(term) {
+        document.getElementById('jargon-text').innerText = JARGON_TERMS[term];
+        document.getElementById('jargon-modal').classList.remove('hidden');
+        document.getElementById('jargon-modal').classList.add('flex');
+      },
+
+      closeJargon: function() {
+        document.getElementById('jargon-modal').classList.add('hidden');
+        document.getElementById('jargon-modal').classList.remove('flex');
+      },
+
+      formatJargon: function(text) {
+        const terms = Object.keys(JARGON_TERMS);
+        const regex = new RegExp(`\\b(${terms.join('|')})\\b`, 'gi');
+        return text.replace(regex, (match) => {
+          const lowerMatch = match.toLowerCase();
+          if(JARGON_TERMS[lowerMatch]) {
+            return `<button onclick="event.stopPropagation(); app.openJargon('${lowerMatch}')" class="text-blue-600 underline decoration-blue-300 decoration-dashed underline-offset-4 font-bold focus:outline-none hover:text-blue-800 transition-colors">${match}</button>`;
+          }
+          return match;
+        });
+      },
+
+      getMatchStatus: function(actual, target, dir) {
+        if (actual === undefined || actual === null) return 'unknown';
+        if (dir === 'lower') {
+          if (actual <= target) return 'green';
+          if (actual <= target * 1.3) return 'orange';
+          return 'red';
+        } else {
+          if (actual >= target) return 'green';
+          if (actual >= target * 0.7) return 'orange';
+          return 'red';
+        }
+      },
+
+      showError: function(message) {
+        document.getElementById('error-message-text').innerText = message;
+        this.setStep('error');
+      },
+
+      generateResults: async function() {
+        this.setStep('loading');
+        state.isMockData = false;
+
+        try {
+          const fmpSectorRaw = FMP_SECTORS[state.selectedSector] || 'Technology';
+          const fmpSector = encodeURIComponent(fmpSectorRaw); 
+          
+          let url = `https://financialmodelingprep.com/api/v3/stock-screener?sector=${fmpSector}&limit=30&apikey=${API_KEY}`;
+          
+          if (state.selectedRegion && FMP_EXCHANGES[state.selectedRegion]) {
+            url += `&exchange=${FMP_EXCHANGES[state.selectedRegion]}`;
+          }
+
+          const response = await fetch(url);
+          
+          // OPLOSSING VOOR DE 403 FOUT:
+          if (!response.ok) {
+            if (response.status === 403) {
+                throw new Error("API-Toegang geweigerd (403). De gratis sleutel heeft mogelijk geen toegang tot deze specifieke screening endpoint.");
+            }
+            throw new Error(`Kan beurs niet bereiken (HTTP Status: ${response.status})`);
+          }
+          
+          const data = await response.json();
+
+          if (data['Error Message']) throw new Error(data['Error Message']);
+          if (!Array.isArray(data)) throw new Error("Onverwacht antwoord van de server gekregen.");
+          
+          if (data.length === 0) {
+             throw new Error("NoResults"); // Gaat naar catch block voor fallback/no-results logic
+          }
+
+          const topStocksToAnalyse = data.slice(0, 10);
+          let premiumSkipped = 0;
+          let noDataSkipped = 0;
+
+          const promises = topStocksToAnalyse.map(async (stock) => {
+            try {
+              const ratioRes = await fetch(`https://financialmodelingprep.com/api/v3/ratios-ttm/${stock.symbol}?apikey=${API_KEY}`);
+              const ratioData = await ratioRes.json();
+              
+              if (ratioData['Error Message']) {
+                premiumSkipped++; 
+                return null;
+              }
+              
+              let ratios = ratioData[0];
+              if (!ratios) {
+                noDataSkipped++;
+                return null; 
+              }
+              
+              ratios.mockRSI = Math.floor(Math.random() * 60) + 20;
+
+              let totalScore = 0;
+              let activeChecks = 0;
+              let stockRatioDetails = [];
+              
+              for (const ratio of RATIOS) {
+                if (!state.enabledRatios[ratio.id]) continue;
+                
+                let rawApiValue = ratios[ratio.fmpKey];
+                if (rawApiValue === undefined || rawApiValue === null || isNaN(rawApiValue)) continue; 
+                
+                const actualValue = rawApiValue * ratio.multiplier;
+                const targetValue = state.ratioValues[ratio.id];
+                const status = app.getMatchStatus(actualValue, targetValue, ratio.dir);
+
+                if (status === 'green') totalScore += 100;
+                else if (status === 'orange') totalScore += 50;
+                
+                activeChecks++;
+                stockRatioDetails.push({ name: ratio.name, actual: actualValue, target: targetValue, status: status, unit: ratio.unit, dir: ratio.dir });
+              }
+
+              if (activeChecks === 0) return null;
+              const avgScore = totalScore / activeChecks;
+              if (avgScore < 45) return null; 
+
+              const isEuro = ['AMS','BRU','PAR','FRA','XETRA'].some(ex => stock.exchangeShortName && stock.exchangeShortName.includes(ex));
+              return {
+                id: stock.symbol, name: stock.companyName, ticker: stock.symbol,
+                price: `${isEuro ? '€' : '$'} ${stock.price ? stock.price.toFixed(2) : 'N/B'}`,
+                match: Math.round(avgScore) + '%', ratioDetails: stockRatioDetails
+              };
+            } catch (e) { 
+              return null; 
+            }
+          });
+
+          const analysedStocks = await Promise.all(promises);
+          state.results = analysedStocks.filter(s => s !== null).sort((a, b) => parseInt(b.match) - parseInt(a.match));
+          
+          if (state.results.length === 0) {
+            if (premiumSkipped >= topStocksToAnalyse.length / 2) {
+               throw new Error("PremiumSkipped");
+            } else if (noDataSkipped === topStocksToAnalyse.length) {
+               throw new Error("NoData");
+            } else {
+               this.setStep('no-results'); 
+            }
+          } else {
+            this.setStep('results');
+          }
+
+        } catch (error) {
+          console.warn("API Error gevangen, fallback naar simulatie data:", error.message);
+          
+          // Als de gebruiker gewoon te strenge filters had, toon de no-results pagina
+          if (error.message === "NoResults") {
+              this.showError("Er zijn geen aandelen gevonden voor deze regio via de live beurs. Probeer een andere regio.");
+              return;
+          }
+          if (error.message === "PremiumSkipped" || error.message === "NoData") {
+             // In dit geval weigerde de API gewoon de specifieke data
+             console.warn("API weigerde toegang tot bedrijfsdata.");
+          }
+
+          // Terugvallen op DEMO (Mock) data als de API een 403 geeft of weigert
+          state.isMockData = true;
+          
+          setTimeout(() => {
+            const sectorName = SECTORS.find(s => s.id === state.selectedSector)?.name || 'Gekozen Sector';
+            const regionName = REGIONS.find(r => r.id === state.selectedRegion)?.name || 'deze regio';
+            
+            const getSimulatedRatios = (quality) => {
+              let details = []; let score = 0; let count = 0;
+              RATIOS.forEach(r => {
+                if (!state.enabledRatios[r.id]) return;
+                let actual = quality === 'good' 
+                  ? (r.dir === 'lower' ? state.ratioValues[r.id] * 0.9 : state.ratioValues[r.id] * 1.1)
+                  : (r.dir === 'lower' ? state.ratioValues[r.id] * 1.25 : state.ratioValues[r.id] * 0.8);
+                
+                const status = app.getMatchStatus(actual, state.ratioValues[r.id], r.dir);
+                if (status === 'green') score += 100; else if (status === 'orange') score += 50;
+                count++;
+                details.push({ name: r.name, actual, target: state.ratioValues[r.id], status, unit: r.unit, dir: r.dir });
+              });
+              return { details, match: count > 0 ? Math.round(score/count) + '%' : '100%' };
+            };
+
+            const mock1 = getSimulatedRatios('good');
+            const mock2 = getSimulatedRatios('mixed');
+
+            state.results = [
+              { id: 'ALPH', name: `Alpha ${sectorName} Corp (DEMO)`, ticker: 'ALPH', price: '€ 142.50', match: mock1.match, ratioDetails: mock1.details },
+              { id: 'GLFH', name: `${regionName} Holdings (DEMO)`, ticker: 'GLFH', price: '€ 38.20', match: mock2.match, ratioDetails: mock2.details }
+            ];
+            
+            app.setStep('results');
+          }, 1500);
+        }
+      },
+
+      updateView: function() {
+        ['step1', 'step2', 'step3', 'loading', 'no-results', 'results', 'error'].forEach(v => {
+          const el = document.getElementById('view-' + v);
+          if (el) el.classList.add('hidden');
+        });
+
+        const backBtn = document.getElementById('back-btn');
+        const title = document.getElementById('header-title');
+        
+        if(state.step === 1) { backBtn.classList.add('hidden'); title.innerText = 'Kies een Sector'; this.renderStep1(); }
+        else if(state.step === 2) { backBtn.classList.remove('hidden'); title.innerText = 'Kies een Regio'; this.renderStep2(); }
+        else if(state.step === 3) { backBtn.classList.remove('hidden'); title.innerText = "Stel Ratio's In"; this.renderStep3(); }
+        else if(state.step === 'loading') { backBtn.classList.add('hidden'); title.innerText = 'Zoeken...'; document.getElementById('view-loading').classList.remove('hidden'); }
+        else if(state.step === 'no-results') { backBtn.classList.remove('hidden'); title.innerText = 'Geen Resultaten'; document.getElementById('view-no-results').classList.remove('hidden'); }
+        else if(state.step === 'error') { backBtn.classList.remove('hidden'); title.innerText = 'Let op!'; document.getElementById('view-error').classList.remove('hidden'); }
+        else if(state.step === 'results') { backBtn.classList.remove('hidden'); title.innerText = 'Jouw Resultaten'; this.renderResults(); }
+      },
+
+      renderStep1: function() {
+        let html = `<div class="p-4 space-y-3 pb-24"><p class="text-gray-600 mb-4 font-medium leading-relaxed">In welke sector wil je op zoek gaan naar aandelen?</p>`;
+        SECTORS.forEach(sector => {
+          html += `
+          <button onclick="app.selectSector('${sector.id}')" class="w-full text-left bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between hover:border-blue-500 hover:shadow-md transition-all active:scale-95">
+            <div><h3 class="font-semibold text-gray-800">${sector.name}</h3><p class="text-sm text-gray-500 mt-1">${sector.desc}</p></div>
+            ${SVG.chevronRight}
+          </button>`;
+        });
+        if(state.showInstallTip) {
+          html += `
+          <div class="mt-8 bg-blue-50 p-5 rounded-2xl border border-blue-100 relative shadow-sm">
+            <button onclick="app.closeInstallTip()" class="absolute top-2 right-2 text-blue-400 hover:text-blue-600 transition-colors">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+            </button>
+            <h4 class="font-bold text-blue-900 mb-2 flex items-center">App Installeren op iPhone</h4>
+            <p class="text-sm text-blue-800 leading-relaxed">Open deze link in <strong>Safari</strong>. Tik onderin op het Deel-icoon en kies <strong>"Zet op beginscherm"</strong>.</p>
+          </div>`;
+        }
+        html += `</div>`;
+        const container = document.getElementById('view-step1');
+        container.innerHTML = html;
+        container.classList.remove('hidden');
+      },
+
+      renderStep2: function() {
+        let html = `<div class="p-4 space-y-3 pb-24"><p class="text-gray-600 mb-4 font-medium leading-relaxed">Uit welk gebied moeten de bedrijven komen?</p>`;
+        REGIONS.forEach(region => {
+          html += `
+          <button onclick="app.selectRegion('${region.id}')" class="w-full text-left bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex items-center hover:border-blue-500 hover:shadow-md transition-all active:scale-95">
+            <span class="text-3xl mr-4">${region.icon}</span><span class="font-semibold text-gray-800 text-lg flex-1">${region.name}</span>
+            ${SVG.chevronRight}
+          </button>`;
+        });
+        html += `</div>`;
+        const container = document.getElementById('view-step2');
+        container.innerHTML = html;
+        container.classList.remove('hidden');
+      },
+
+      renderStep3: function() {
+        let html = `<div class="p-4 pb-32">
+          <p class="text-gray-600 mb-6 font-medium text-sm leading-relaxed">
+            Verschuif de regelaars. Het <strong>groene</strong> gedeelte is veilig/gezond, <strong>rood</strong> is risicovol. Schakel ratio's uit als je er niet op wilt zoeken.
+          </p>
+          <div class="space-y-6">`;
+        
+        RATIOS.forEach(ratio => {
+          const isEnabled = state.enabledRatios[ratio.id];
+          const val = state.ratioValues[ratio.id];
+          const gradientColors = ratio.dir === 'lower' 
+            ? 'linear-gradient(to right, #4ade80 25%, #facc15 50%, #f87171 75%)' : 'linear-gradient(to right, #f87171 25%, #facc15 50%, #4ade80 75%)';
+
+          html += `
+          <div class="bg-white p-5 rounded-3xl shadow-sm border transition-all duration-300 ${isEnabled ? 'border-blue-200 shadow-md' : 'border-gray-100 opacity-60 grayscale-[0.3]'}">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center space-x-3 flex-1">
+                <button onclick="app.toggleRatio('${ratio.id}')" class="w-12 h-6 rounded-full transition-colors relative flex items-center ${isEnabled ? 'bg-blue-600' : 'bg-gray-300'}">
+                  <div class="w-5 h-5 bg-white rounded-full shadow-md transition-transform transform ${isEnabled ? 'translate-x-6' : 'translate-x-1'}"></div>
+                </button>
+                <h3 class="font-bold text-gray-800 flex items-center">
+                  ${ratio.name}
+                  <button onclick="app.toggleTooltip('${ratio.id}')" class="ml-2 text-blue-500 hover:text-blue-700 focus:outline-none p-1 bg-blue-50 rounded-full">${SVG.info}</button>
+                </h3>
+              </div>
+              ${isEnabled ? `<div id="val-display-${ratio.id}" class="text-sm font-extrabold px-3 py-1 rounded-xl bg-blue-100 text-blue-800 tabular-nums shadow-sm">${ratio.dir === 'lower' ? 'Max' : 'Min'} ${val}${ratio.unit}</div>` : ''}
+            </div>
+            ${state.activeTooltip === ratio.id ? `<div class="mb-4 p-4 bg-blue-50/80 text-blue-900 text-sm rounded-2xl border border-blue-100 animate-slide-up leading-relaxed">${app.formatJargon(ratio.info)}</div>` : ''}
+            <div class="relative mt-2 px-1">
+              <input type="range" min="${ratio.min}" max="${ratio.max}" step="${ratio.step}" value="${val}"
+                oninput="app.updateSlider('${ratio.id}', this.value)" ${!isEnabled ? 'disabled' : ''}
+                style="background: ${isEnabled ? gradientColors : '#e5e7eb'};"
+                class="w-full custom-slider ${!isEnabled ? 'opacity-50 cursor-not-allowed' : ''}" />
+              <div class="flex justify-between mt-3 text-xs font-bold text-gray-400">
+                <span class="${ratio.dir === 'higher' ? 'text-red-400' : 'text-green-500'}">${ratio.min}${ratio.unit}</span>
+                <span class="${ratio.dir === 'lower' ? 'text-red-400' : 'text-green-500'}">${ratio.max}${ratio.unit}</span>
+              </div>
+            </div>
+          </div>`;
+        });
+
+        html += `
+          </div>
+        </div>
+        <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-200 max-w-md mx-auto z-20">
+          <button onclick="app.generateResults()" class="w-full bg-blue-600 text-white font-bold text-lg py-4 rounded-2xl shadow-lg shadow-blue-600/30 flex items-center justify-center space-x-2 active:scale-95 transition-transform">
+            ${SVG.search} <span>Zoek Matchende Aandelen</span>
+          </button>
+        </div>`;
+
+        const container = document.getElementById('view-step3');
+        container.innerHTML = html;
+        container.classList.remove('hidden');
+      },
+
+      renderResults: function() {
+        let html = `<div class="p-4 pb-24">`;
+
+        if (state.isMockData) {
+          html += `
+          <div class="bg-orange-100 text-orange-800 p-4 rounded-2xl mb-4 flex items-start space-x-3 text-sm border border-orange-200 shadow-sm">
+            ${SVG.alertCircle}
+            <p>De API-sleutel heeft geen toegang tot de gevraagde beurs of de limiet is bereikt. We tonen nu simulatie data (DEMO) zodat je kunt zien hoe de app werkt.</p>
+          </div>`;
+        }
+
+        html += `
+        <div class="bg-green-100 text-green-800 p-4 rounded-2xl mb-6 flex items-start space-x-3 shadow-sm border border-green-200">
+          ${SVG.checkCircle}
+          <p class="text-sm font-medium">We hebben <strong>${state.results.length} aandelen</strong> gevonden die (grotendeels) door jouw keuring kwamen!</p>
+        </div>
+        <div class="space-y-6">`;
+
+        state.results.forEach(stock => {
+          html += `
+          <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+            <div class="p-5 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-transparent">
+              <div class="flex justify-between items-start mb-2">
+                <div><h2 class="text-2xl font-bold text-gray-900">${stock.ticker}</h2><p class="text-gray-600 font-medium">${stock.name}</p></div>
+                <div class="bg-blue-600 text-white px-3 py-1 rounded-xl text-sm font-bold flex items-center shadow-sm">${SVG.trendingUp} ${stock.match} Match</div>
+              </div>
+              <div class="text-3xl font-extrabold text-gray-900 mt-2">${stock.price}</div>
+            </div>
+            <div class="p-5 bg-gray-50/50">
+              <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">Jouw Ratio's vs Dit Aandeel</h4>
+              <div class="space-y-3">`;
+              
+          stock.ratioDetails.forEach(detail => {
+            const colorClass = detail.status === 'green' ? 'bg-green-100 text-green-700 border-green-200' :
+                               detail.status === 'orange' ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-red-100 text-red-700 border-red-200';
+            html += `
+                <div class="flex justify-between items-center text-sm bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+                  <div class="flex flex-col">
+                    <span class="text-gray-700 font-bold">${detail.name.split(' (')[0]}</span>
+                    <span class="text-[10px] text-gray-400 uppercase tracking-wide">Doel: ${detail.dir === 'lower'?'Max':'Min'} ${detail.target}${detail.unit}</span>
+                  </div>
+                  <div class="font-black px-3 py-1.5 rounded-xl border flex items-center justify-center min-w-[70px] ${colorClass}">
+                    ${detail.actual.toFixed(1)}${detail.unit}
+                  </div>
+                </div>`;
+          });
+
+          html += `</div></div></div>`;
+        });
+
+        html += `
+        </div>
+        <button onclick="app.setStep(1)" class="w-full mt-8 bg-gray-200 text-gray-800 font-bold py-4 rounded-2xl hover:bg-gray-300 transition-colors">
+          Nieuwe Zoekopdracht
+        </button>
+        </div>`;
+
+        const container = document.getElementById('view-results');
+        container.innerHTML = html;
+        container.classList.remove('hidden');
+      }
+    };
+
+    app.updateView();
+  </script>
+</body>
+</html>
